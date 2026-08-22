@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import FastAPI, Request, Response, status
+from fastapi import FastAPI, Request, Response
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
@@ -65,20 +65,17 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # 1. เรียกใช้ Gemini (ระบุ api_version='v1' เพื่อป้องกัน 404 v1beta)
+    # 1. ให้ Gemini สรุปข้อความ
     reply_text = ""
     try:
-        model = genai.GenerativeModel(
-            model_name='gemini-2.5-flash'
-        )
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
-        # บังคับใช้ v1 endpoint
-        response = model.generate_content(prompt, request_options={"api_version": "v1"})
+        response = model.generate_content(prompt)
         reply_text = response.text
     except Exception as e:
         print(f"Gemini Error: {e}")
-        # ถ้า Gemini มีปัญหา จะใช้ข้อความต้นฉบับแทน เพื่อให้ระบบทำงานต่อได้
-        reply_text = f"บันทึกรายงานแล้วครับ:\n{user_text}"
+        # กรณี Gemini มีปัญหา ให้ส่งข้อความตอบกลับไปก่อน ไม่ให้ระบบค้าง
+        reply_text = f"ได้รับรายงานเรียบร้อยแล้วครับ:\n{user_text}"
 
     # 2. บันทึกลง Google Sheet
     if gc:
