@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Response, status
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from google import genai
+import google.generativeai as genai
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -19,20 +19,15 @@ GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 line_bot_api = LineBotApi(LINE_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
 
-# ตั้งค่า Gemini Client
-gemini_client = None
+# ตั้งค่า Gemini API
 if GEMINI_API_KEY:
-    try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"Gemini Init Error: {e}")
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # ตั้งค่า Google Sheets
 scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 gc = None
 try:
     if GOOGLE_CREDENTIALS:
-        # ลบอักขระพิเศษส่วนเกินออก
         clean_creds = GOOGLE_CREDENTIALS.strip().strip("'").strip('"')
         creds_dict = json.loads(clean_creds)
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
@@ -70,20 +65,20 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # 1. ให้ Gemini สรุปข้อความ
+    # 1. เรียกใช้ Gemini (ระบุ api_version='v1' เพื่อป้องกัน 404 v1beta)
     reply_text = ""
-    if gemini_client:
-        try:
-            response = gemini_client.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}",
-            )
-            reply_text = response.text
-        except Exception as e:
-            print(f"Gemini Error: {e}")
-            reply_text = f"ได้รับรายงานแล้วครับ:\n{user_text}"
-    else:
-        reply_text = f"ได้รับรายงานแล้วครับ:\n{user_text}"
+    try:
+        model = genai.GenerativeModel(
+            model_name='gemini-2.5-flash'
+        )
+        prompt = f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
+        # บังคับใช้ v1 endpoint
+        response = model.generate_content(prompt, request_options={"api_version": "v1"})
+        reply_text = response.text
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        # ถ้า Gemini มีปัญหา จะใช้ข้อความต้นฉบับแทน เพื่อให้ระบบทำงานต่อได้
+        reply_text = f"บันทึกรายงานแล้วครับ:\n{user_text}"
 
     # 2. บันทึกลง Google Sheet
     if gc:
