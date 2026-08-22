@@ -5,10 +5,12 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import google.generativeai as genai
+import gspread
+from google.oauth2.service_account import Credentials
 
 app = FastAPI()
 
-# ดึงค่า Environment Variables
+# 1. ดึงค่า Environment Variables จาก Render
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "")
 LINE_SECRET = os.environ.get("LINE_SECRET", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -20,6 +22,18 @@ handler = WebhookHandler(LINE_SECRET)
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# 2. ตั้งค่าเชื่อมต่อ Google Sheets ผ่าน credentials.json
+scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+gc = None
+try:
+    if os.path.exists("credentials.json"):
+        creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+        gc = gspread.authorize(creds)
+    else:
+        print("Warning: credentials.json file not found.")
+except Exception as e:
+    print(f"GSpread Credentials Error: {e}")
+
 @app.get("/")
 def read_root():
     return {"status": "ok"}
@@ -30,6 +44,7 @@ async def callback(request: Request):
     body = await request.body()
     body_str = body.decode("utf-8")
 
+    # ป้องกันการเกิด 400 Bad Request เมื่อกดปุ่ม Verify ใน LINE Developers
     if not signature:
         return Response(content="OK", status_code=200)
 
@@ -47,7 +62,7 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # สรุปข้อความด้วย Gemini
+    # --- ขั้นตอนที่ 1: ให้ Gemini สรุปข้อความ ---
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
@@ -55,9 +70,21 @@ def handle_message(event):
         reply_text = response.text
     except Exception as e:
         print(f"Gemini Error: {e}")
-        reply_text = f"รับทราบครับ ข้อความของคุณคือ: {user_text}"
+        reply_text = f"บันทึกรายงานแล้วครับ: {user_text}"
 
-    # ตอบกลับไปยัง LINE
+    # --- ขั้นตอนที่ 2: บันทึกลง Google Sheet ---
+    if gc:
+        try:
+            # เปิดไฟล์ชื่อ LINE_Work_Reports บน Google Sheet
+            sh = gc.open("LINE_Work_Reports").sheet1
+            # เพิ่มแถวใหม่ [ข้อความต้นฉบับ, ข้อความสรุปจาก Gemini]
+            sh.append_row([user_text, reply_text])
+        except Exception as e:
+            print(f"Sheet Append Error: {e}")
+    else:
+        print("Google Sheet not configured.")
+
+    # --- ขั้นตอนที่ 3: ตอบกลับผู้ใช้ใน LINE ---
     try:
         line_bot_api.reply_message(
             event.reply_token,
