@@ -14,6 +14,7 @@ app = FastAPI()
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "")
 LINE_SECRET = os.environ.get("LINE_SECRET", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 
 line_bot_api = LineBotApi(LINE_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
@@ -21,15 +22,16 @@ handler = WebhookHandler(LINE_SECRET)
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# ตั้งค่า Google Sheets
+# ตั้งค่า Google Sheets ผ่าน Environment Variable
 scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 gc = None
 try:
-    if os.path.exists("credentials.json"):
-        creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+    if GOOGLE_CREDENTIALS:
+        creds_dict = json.loads(GOOGLE_CREDENTIALS)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         gc = gspread.authorize(creds)
     else:
-        print("Warning: credentials.json file not found.")
+        print("Warning: GOOGLE_CREDENTIALS env var not found.")
 except Exception as e:
     print(f"GSpread Credentials Error: {e}")
 
@@ -60,7 +62,7 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # 1. ให้ Gemini สรุปข้อความ (ปรับเป็น gemini-pro)
+    # 1. ให้ Gemini สรุปข้อความ
     try:
         model = genai.GenerativeModel('gemini-pro')
         prompt = f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
