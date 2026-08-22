@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Response, status
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import google.generativeai as genai
+from google import genai
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -19,19 +19,25 @@ GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 line_bot_api = LineBotApi(LINE_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
 
+# ตั้งค่า Gemini Client
+gemini_client = None
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+    try:
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        print(f"Gemini Init Error: {e}")
 
 # ตั้งค่า Google Sheets
 scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 gc = None
 try:
     if GOOGLE_CREDENTIALS:
-        # ตัดช่องว่างส่วนเกินเพื่อป้องกัน JSONDecodeError
-        clean_creds = GOOGLE_CREDENTIALS.strip()
+        # ลบอักขระพิเศษส่วนเกินออก
+        clean_creds = GOOGLE_CREDENTIALS.strip().strip("'").strip('"')
         creds_dict = json.loads(clean_creds)
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         gc = gspread.authorize(creds)
+        print("Google Sheets authorization successful!")
     else:
         print("Warning: GOOGLE_CREDENTIALS env var not found.")
 except Exception as e:
@@ -66,21 +72,18 @@ def handle_message(event):
     
     # 1. ให้ Gemini สรุปข้อความ
     reply_text = ""
-    try:
-        # ลองใช้ gemini-1.5-flash-latest หรือ fallback ไปโมเดลมาตรฐาน
+    if gemini_client:
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
-            prompt = f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
-            response = model.generate_content(prompt)
+            response = gemini_client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}",
+            )
             reply_text = response.text
-        except Exception:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            prompt = f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
-            response = model.generate_content(prompt)
-            reply_text = response.text
-    except Exception as e:
-        print(f"Gemini Error: {e}")
-        reply_text = f"บันทึกรายงานเรียบร้อยแล้วครับ:\n{user_text}"
+        except Exception as e:
+            print(f"Gemini Error: {e}")
+            reply_text = f"ได้รับรายงานแล้วครับ:\n{user_text}"
+    else:
+        reply_text = f"ได้รับรายงานแล้วครับ:\n{user_text}"
 
     # 2. บันทึกลง Google Sheet
     if gc:
