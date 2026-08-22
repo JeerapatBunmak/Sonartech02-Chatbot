@@ -62,9 +62,9 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # 1. ให้ Gemini สรุปข้อความ
+    # 1. ให้ Gemini สรุปข้อความ (อัปเดตเป็น gemini-1.5-flash)
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
         response = model.generate_content(prompt)
         reply_text = response.text
