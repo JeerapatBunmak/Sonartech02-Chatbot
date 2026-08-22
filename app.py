@@ -28,7 +28,7 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"Gemini Init Error: {e}")
 
-# ตั้งค่า Google Sheets พร้อมแก้ปัญหา JWT Signature
+# ตั้งค่า Google Sheets
 scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 gc = None
 try:
@@ -37,7 +37,6 @@ try:
         creds_dict = json.loads(clean_creds)
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         
-        # รีเฟรช Token เพื่อแก้ปัญหาเวลาเซิร์ฟเวอร์กับ Google ไม่ตรงกัน
         auth_request = requests.Request()
         creds.refresh(auth_request)
         
@@ -75,33 +74,34 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # 1. ให้ Gemini สรุปข้อความ (ใช้ gemini-1.5-flash เพื่อหลบเลี่ยงอาการ Server 503)
+    # 1. ให้ Gemini สรุปข้อความ (ใช้รุ่นมาตรฐาน gemini-2.0-flash)
     reply_text = ""
     if gemini_client:
         try:
             response = gemini_client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.0-flash',
                 contents=f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
             )
-            reply_text = response.text
+            if response and hasattr(response, 'text'):
+                reply_text = response.text
+            else:
+                reply_text = str(response)
         except Exception as e:
             print(f"Gemini Error: {e}")
-            reply_text = f"ได้รับรายงานแล้วครับ:\n{user_text}"
+            reply_text = f"ได้รับรายงานเรียบร้อยแล้วครับ:\n{user_text}"
     else:
-        reply_text = f"ได้รับรายงานแล้วครับ:\n{user_text}"
+        reply_text = f"ได้รับรายงานเรียบร้อยแล้วครับ:\n{user_text}"
 
-    # 2. บันทึกลง Google Sheet (พร้อมพิมพ์ Log เช็กสถานะ)
+    # 2. บันทึกลง Google Sheet ชื่อ LINE_Work_Reports
     if gc:
         try:
-            print(f"Attempting to open sheet 'LINE_Work_Reports'...")
             sh = gc.open("LINE_Work_Reports").sheet1
-            print(f"Successfully opened sheet, appending row...")
             sh.append_row([user_text, reply_text])
             print("Successfully appended to Google Sheet!")
         except Exception as e:
-            print(f"CRITICAL Sheet Append Error: {e}")
+            print(f"Sheet Append Error: {e}")
     else:
-        print("Google Sheet object (gc) is None/Not configured.")
+        print("Google Sheet not configured.")
 
     # 3. ตอบกลับใน LINE
     try:
