@@ -1,5 +1,4 @@
 import os
-import json
 from fastapi import FastAPI, Request, Response
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -14,7 +13,6 @@ app = FastAPI()
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "")
 LINE_SECRET = os.environ.get("LINE_SECRET", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 
 line_bot_api = LineBotApi(LINE_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
@@ -23,20 +21,19 @@ handler = WebhookHandler(LINE_SECRET)
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# ตั้งค่า Google Sheets
+# ตั้งค่า Google Sheets จากไฟล์ credentials.json โดยตรง
 scopes = ["https://www.googleapis.com/auth/spreadsheets"]
 gc = None
-try:
-    if GOOGLE_CREDENTIALS:
-        clean_creds = GOOGLE_CREDENTIALS.strip().strip("'").strip('"')
-        creds_dict = json.loads(clean_creds)
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+
+if os.path.exists("credentials.json"):
+    try:
+        creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
         gc = gspread.authorize(creds)
-        print("Google Sheets authorization successful!")
-    else:
-        print("Warning: GOOGLE_CREDENTIALS env var not found.")
-except Exception as e:
-    print(f"GSpread Credentials Error: {e}")
+        print("Google Sheets authorization successful via credentials.json!")
+    except Exception as e:
+        print(f"GSpread File Error: {e}")
+else:
+    print("Warning: credentials.json file not found in repository.")
 
 @app.get("/")
 def read_root():
@@ -74,7 +71,6 @@ def handle_message(event):
         reply_text = response.text
     except Exception as e:
         print(f"Gemini Error: {e}")
-        # กรณี Gemini มีปัญหา ให้ส่งข้อความตอบกลับไปก่อน ไม่ให้ระบบค้าง
         reply_text = f"ได้รับรายงานเรียบร้อยแล้วครับ:\n{user_text}"
 
     # 2. บันทึกลง Google Sheet
