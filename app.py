@@ -7,7 +7,6 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from google import genai
 import gspread
 from google.oauth2.service_account import Credentials
-from google.auth.transport import requests
 
 app = FastAPI()
 
@@ -28,17 +27,14 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"Gemini Init Error: {e}")
 
-# ตั้งค่า Google Sheets
-scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+# ตั้งค่า Google Sheets (เชื่อมต่อตรงผ่าน Credentials โดยไม่ต้องสั่ง refresh ข้ามระบบ)
+scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 gc = None
 try:
     if GOOGLE_CREDENTIALS:
         clean_creds = GOOGLE_CREDENTIALS.strip().strip("'").strip('"')
         creds_dict = json.loads(clean_creds)
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        
-        auth_request = requests.Request()
-        creds.refresh(auth_request)
         
         gc = gspread.authorize(creds)
         print("Google Sheets authorization successful!")
@@ -74,12 +70,18 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # 1. ให้ Gemini สรุปข้อความ (บังคับใช้ gemini-3.6-flash ตามที่ Error แนะนำ)
+    # 1. ให้ Gemini สรุปข้อความ (ใช้ระบบค้นหาโมเดลแฟลชอัตโนมัติ ป้องกันปัญหารุ่นเปลี่ยน)
     reply_text = ""
     if gemini_client:
         try:
+            selected_model = "gemini-1.5-flash"
+            for m in gemini_client.models.list():
+                if "flash" in m.name and "generateContent" in m.supported_generation_methods:
+                    selected_model = m.name
+                    break
+            
             response = gemini_client.models.generate_content(
-                model='gemini-3.6-flash',
+                model=selected_model,
                 contents=f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
             )
             if response and hasattr(response, 'text'):
