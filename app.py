@@ -74,12 +74,12 @@ async def callback(request: Request):
 def handle_message(event):
     user_text = event.message.text
     
-    # 1. ให้ Gemini สรุปข้อความ (ใช้รุ่นมาตรฐาน gemini-2.0-flash)
+    # 1. ให้ Gemini สรุปข้อความ (บังคับใช้ gemini-3.6-flash ตามที่ Error แนะนำ)
     reply_text = ""
     if gemini_client:
         try:
             response = gemini_client.models.generate_content(
-                model='gemini-2.0-flash',
+                model='gemini-3.6-flash',
                 contents=f"ช่วยสรุปรายงานการทำงานนี้ให้อ่านง่าย กระชับ เป็นหัวข้อชัดเจน:\n{user_text}"
             )
             if response and hasattr(response, 'text'):
